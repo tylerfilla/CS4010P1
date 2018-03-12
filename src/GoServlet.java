@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.*;
 
 @WebServlet(name = "GoServlet", urlPatterns = {"/go"})
 public class GoServlet extends HttpServlet {
@@ -38,17 +39,16 @@ public class GoServlet extends HttpServlet {
         // Time at the beginning of computation
         long startNanos = System.nanoTime();
 
-        BigInteger big = new BigInteger(formNumber);
-        boolean alreadyPrime = false;
+        BigInteger inputInteger = new BigInteger(formNumber);
 
-        if (isBigPrime(big)) {
-            alreadyPrime = true;
-        } else {
-            // A list of prime factors
+        // Create executor for work
+        ExecutorService executorService = Executors.newCachedThreadPool();
+
+        // Submit work
+        Future<List<BigInteger>> factorizeTask = executorService.submit(() -> {
             List<BigInteger> primeFactors = new ArrayList<>();
 
-            // Find prime factors
-            BigInteger x = big;
+            BigInteger x = inputInteger;
             for (BigInteger i = BigInteger.valueOf(2); i.compareTo(x) <= 0; i = i.add(BigInteger.ONE)) {
                 while (x.mod(i).equals(BigInteger.ZERO)) {
                     primeFactors.add(i);
@@ -56,9 +56,27 @@ public class GoServlet extends HttpServlet {
                 }
             }
 
-            // Record prime factors
-            req.setAttribute("primeFactors", primeFactors);
+            return primeFactors;
+        });
+
+        boolean alreadyPrime = false;
+
+        List<BigInteger> primeFactors = null;
+        try {
+            primeFactors = factorizeTask.get(10, TimeUnit.SECONDS);
+        } catch (ExecutionException | InterruptedException ignored) {
+        } catch (TimeoutException ignored) {
+            req.setAttribute("failed", true);
+        } finally {
+            if (primeFactors != null) {
+                if (primeFactors.size() == 1) {
+                    alreadyPrime = true;
+                }
+            }
         }
+
+        // Record prime factors
+        req.setAttribute("primeFactors", primeFactors);
 
         // Time at the end of computation
         long stopNanos = System.nanoTime();
@@ -68,7 +86,8 @@ public class GoServlet extends HttpServlet {
 
         // The price components for the computation
         // Each second, rounded to the next integer second, costs 1 dollar
-        double subtotal = Math.ceil(computationTime);
+        // There is a maximum subtotal of $10, since actual execution might take a few milliseconds over to cancel
+        double subtotal = Math.min(10, Math.ceil(computationTime));
         double salesTax = taxRate * subtotal;
         double total = subtotal + salesTax;
 
@@ -81,25 +100,6 @@ public class GoServlet extends HttpServlet {
         req.setAttribute("salesTax", salesTax);
         req.setAttribute("total", total);
         req.getRequestDispatcher("/results").forward(req, resp);
-    }
-
-    private boolean isBigPrime(BigInteger big) {
-        // Use BigInteger's own prime check with 50% certainty
-        if (!big.isProbablePrime(1))
-            return false;
-
-        // If integer ends with a zero bit (is even) and is greater than two
-        if (!big.testBit(0) && big.compareTo(BigInteger.valueOf(2)) > 0)
-            return false;
-
-        // Then test remaining odd factors up to sqrt(big)
-        for (BigInteger i = BigInteger.valueOf(3); i.pow(2).compareTo(big) <= 0; i = i.add(BigInteger.valueOf(2))) {
-            // If input integer is divisible by the factor
-            if (big.mod(i).compareTo(BigInteger.ZERO) == 0)
-                return false;
-        }
-
-        return true;
     }
 
 }
