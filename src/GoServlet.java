@@ -28,6 +28,13 @@ public class GoServlet extends HttpServlet {
         String formNumber = req.getParameter("number");
         String formCity = req.getParameter("city");
 
+        // Get the name of the city
+        String cityName = getServletContext().getInitParameter("city-" + formCity + "-name");
+
+        // Get the tax rate string proportion representation
+        String taxRateString = getServletContext().getInitParameter("city-" + formCity + "-tax");
+        double taxRate = Double.valueOf(taxRateString);
+
         // Time at the beginning of computation
         long startNanos = System.nanoTime();
 
@@ -59,8 +66,20 @@ public class GoServlet extends HttpServlet {
         // Calculate computation time in seconds
         double computationTime = (stopNanos - startNanos) / 1000000000d;
 
+        // The price components for the computation
+        // Each second, rounded to the next integer second, costs 1 dollar
+        double subtotal = Math.ceil(computationTime);
+        double salesTax = taxRate * subtotal;
+        double total = subtotal + salesTax;
+
+        req.setAttribute("inputNumber", formNumber);
+        req.setAttribute("cityName", cityName);
+        req.setAttribute("taxRatePercent", taxRate * 100);
         req.setAttribute("alreadyPrime", alreadyPrime);
         req.setAttribute("computationTime", computationTime);
+        req.setAttribute("subtotal", subtotal);
+        req.setAttribute("salesTax", salesTax);
+        req.setAttribute("total", total);
         req.getRequestDispatcher("/results").forward(req, resp);
     }
 
